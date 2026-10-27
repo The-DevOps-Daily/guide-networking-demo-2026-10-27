@@ -380,7 +380,9 @@ up() {
   printf 'nameserver 10.0.3.1\nsearch shop.internal\n' >/etc/netns/ns1/resolv.conf
 
   # services
-  start ns1-named ns1 named -g -c "$BIND_DIR/named.conf"
+  # -u bind: named drops to the bind user, like the packaged service (it needs to read rndc.key)
+  chown bind:bind "$BIND_WORK"
+  start ns1-named ns1 named -g -u bind -c "$BIND_DIR/named.conf"
   start router-unbound router unbound -d -p -c "$UNBOUND_CONF"
   for h in web1 web2 web3; do
     start "$h-app" "$h" python3 "$CONF/app.py" http "$h" 8080
