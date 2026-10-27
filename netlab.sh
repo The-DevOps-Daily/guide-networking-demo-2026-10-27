@@ -351,6 +351,8 @@ up() {
   [ ! -e "$REGISTRY" ] || die "the lab is already up: run 'sudo $0 down' first"
   for h in "${HOSTS[@]}" "${EXTRA[@]}"; do
     ! ns_exists "$h" || die "a namespace called $h already exists and netlab did not create it; remove it first (sudo ip netns del $h)"
+    [ ! -e "/etc/netns/$h" ] && [ ! -L "/etc/netns/$h" ] ||
+      die "/etc/netns/$h already exists and netlab did not create it; move it away first"
   done
   trap 'rc=$?; [ "$rc" -eq 0 ] || echo "netlab: setup failed; clean up with: sudo $0 down" >&2' EXIT
 
@@ -363,7 +365,8 @@ up() {
     ip netns add "$h"
     register "$h"
     ip -n "$h" link set lo up
-    mkdir -p "/etc/netns/$h"
+    mkdir -p /etc/netns
+    mkdir "/etc/netns/$h"
   done
 
   # the router: one bridge (switch) per subnet, forwarding on
