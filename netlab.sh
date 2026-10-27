@@ -17,6 +17,8 @@ RUN=/run/netlab                         # pid files
 LOGS=$RUN/log                           # one log file per lab service
 STATE=/var/lib/netlab                   # what this script created; survives a reboot
 REGISTRY=$STATE/namespaces              # the namespaces it created
+MANIFEST=$STATE/manifest                # the files and directories it created
+MAGIC="# netlab manifest v1"
 BIND_DIR=/etc/bind/netlab               # AppArmor lets named read only /etc/bind
 BIND_WORK=/var/cache/bind/netlab        # ...and write only /var/cache/bind
 UNBOUND_CONF=/etc/unbound/netlab.conf   # AppArmor lets unbound read only /etc/unbound
@@ -73,6 +75,12 @@ plug() {
 # register HOST: remember a namespace that this script created, so that "down" removes only those
 register() { echo "$1" >>"$REGISTRY"; }
 
+# created PATH: remember a file or directory that this script created
+created() { echo "$1" >>"$MANIFEST"; }
+
+# owned: true if $STATE holds a manifest that this script wrote
+owned() { [ -d "$STATE" ] && [ ! -L "$STATE" ] && [ "$(head -n 1 "$MANIFEST" 2>/dev/null)" = "$MAGIC" ]; }
+
 # paths that only netlab creates; "up" refuses to start if any of them already exists
 lab_paths() {
   local h
@@ -81,17 +89,23 @@ lab_paths() {
 }
 
 write_files() {
+  local d
   # up checked that none of these exist, so plain mkdir (no -p) fails if anything appears meanwhile
   mkdir -m 0700 "$STATE"
+  echo "$MAGIC" >"$MANIFEST"
   cat /proc/sys/kernel/random/boot_id >"$STATE/boot_id"
   : >"$REGISTRY"
-  mkdir -m 0755 "$CONF" "$RUN" "$BIND_DIR"
+  for d in "$CONF" "$RUN" "$BIND_DIR"; do
+    mkdir -m 0755 "$d"
+    created "$d"
+  done
   mkdir -m 0755 "$LOGS" "$CONF/tls"   # the keys in tls/ are chmod 600
 
   # named's working directory: AppArmor allows writes only under /var/cache/bind, which the bind
   # group can write to. So create it in one step with its final mode, hand it over without
   # following links, and never write into it as root.
   mkdir -m 0750 -- "$BIND_WORK"
+  created "$BIND_WORK"
   chown -h bind:bind -- "$BIND_WORK"
 
   cat >"$CONF/app.py" <<'PY'
@@ -306,6 +320,7 @@ $TTL 60
 53.3     IN PTR   ns1.shop.internal.
 ZONE
 
+  created "$UNBOUND_CONF"
   cat >"$UNBOUND_CONF" <<'UNBOUND'
 # Unbound on router: the caching resolver that every lab host uses
 server:
@@ -349,7 +364,10 @@ up() {
   need_root up
   need_tools
   local h p
-  [ ! -e "$STATE" ] || die "the lab is already up (or was, before a reboot): run 'sudo $0 down' first"
+  if [ -e "$STATE" ] || [ -L "$STATE" ]; then
+    owned || die "$STATE exists but netlab did not create it; move it away first"
+    die "the lab is already up (or was, before a reboot): run 'sudo $0 down' first"
+  fi
   for h in "${HOSTS[@]}" "${EXTRA[@]}"; do
     ! ns_exists "$h" || die "a namespace called $h already exists and netlab did not create it; remove it first (sudo ip netns del $h)"
   done
@@ -369,6 +387,7 @@ up() {
     ip -n "$h" link set lo up
     mkdir -p /etc/netns
     mkdir -m 0755 "/etc/netns/$h"
+    created "/etc/netns/$h"
   done
 
   # the router: one bridge (switch) per subnet, forwarding on
@@ -457,7 +476,7 @@ lab_hosts() {
 
 status() {
   local h
-  [ -f "$REGISTRY" ] && same_boot || { echo "netlab is not up."; return 0; }
+  owned && same_boot || { echo "netlab is not up."; return 0; }
   for h in $(lab_hosts); do
     if ns_exists "$h"; then
       echo "== $h"
@@ -468,11 +487,12 @@ status() {
 
 down() {
   need_root down
-  local h i
-  if [ ! -d "$STATE" ]; then
+  local h i p
+  if [ ! -e "$STATE" ] && [ ! -L "$STATE" ]; then
     echo "netlab: no lab state in $STATE, nothing to remove."
     return 0
   fi
+  owned || die "$STATE was not created by netlab.sh; nothing removed"
   for h in $(lab_hosts); do
     if same_boot && ns_exists "$h"; then
       ip netns pids "$h" | xargs -r kill 2>/dev/null || true
@@ -483,9 +503,14 @@ down() {
       ip netns pids "$h" | xargs -r kill -9 2>/dev/null || true
       ip netns del "$h"
     fi
-    rm -rf "/etc/netns/$h"
   done
-  rm -rf "$CONF" "$BIND_DIR" "$BIND_WORK" "$UNBOUND_CONF" "$RUN" "$STATE"
+  # remove only what the manifest lists, newest first, and only paths that belong to the lab
+  tail -n +2 "$MANIFEST" | tac | while read -r p; do
+    case " $(lab_paths | tr '\n' ' ') " in
+      *" $p "*) rm -rf -- "$p" ;;
+    esac
+  done
+  rm -rf -- "$STATE"
   echo "netlab is down."
 }
 
