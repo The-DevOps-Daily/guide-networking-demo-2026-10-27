@@ -68,8 +68,21 @@ plug() {
   ip -n "$host" route add default via "$gw"
 }
 
+# fresh_dir DIR: replace DIR with a new, empty, root-owned directory. Some parents are
+# group-writable (/var/cache/bind for bind, /var/log for syslog), so never trust what is there:
+# rm removes a planted symlink itself, and mkdir without -p fails if anything reappears.
+fresh_dir() {
+  rm -rf -- "$1"
+  mkdir -m 0755 -- "$1"
+  [ -d "$1" ] && [ ! -L "$1" ] || die "$1 is not a plain directory"
+}
+
 write_files() {
-  mkdir -p "$CONF/tls" "$LOGS" "$RUN" "$BIND_DIR" "$BIND_WORK"
+  local d
+  for d in "$CONF" "$LOGS" "$RUN" "$BIND_DIR" "$BIND_WORK"; do
+    fresh_dir "$d"
+  done
+  mkdir -m 0755 "$CONF/tls"   # the keys inside are chmod 600
 
   cat >"$CONF/app.py" <<'PY'
 #!/usr/bin/env python3
@@ -380,8 +393,10 @@ up() {
   printf 'nameserver 10.0.3.1\nsearch shop.internal\n' >/etc/netns/ns1/resolv.conf
 
   # services
-  # -u bind: named drops to the bind user, like the packaged service (it needs to read rndc.key)
-  chown bind:bind "$BIND_WORK"
+  # -u bind: named drops to the bind user, like the packaged service (it needs to read rndc.key);
+  # -h changes the directory itself and never follows a symlink
+  chown -h bind:bind "$BIND_WORK"
+  chmod 0750 "$BIND_WORK"
   start ns1-named ns1 named -g -u bind -c "$BIND_DIR/named.conf"
   start router-unbound router unbound -d -p -c "$UNBOUND_CONF"
   for h in web1 web2 web3; do
