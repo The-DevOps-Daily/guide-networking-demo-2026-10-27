@@ -5,7 +5,7 @@ cd "$(dirname "$0")/../part06"
 source ../scripts/lib.sh
 
 # pull first, so that no pull progress ends up in the captured output
-for img in traefik/whoami:v1.12.0 busybox:1.38 nginx:1.30-alpine postgres:18-alpine; do
+for img in traefik/whoami:v1.12.0 busybox:1.38 alpine:3.24 nginx:1.30-alpine postgres:18-alpine; do
   must docker pull -q "$img"
 done
 
@@ -28,7 +28,7 @@ capture p6-docker-resolv <<'CMD'
 docker run --rm --network shop busybox:1.38 cat /etc/resolv.conf
 CMD
 capture p6-docker-dns <<'CMD'
-docker run --rm --network shop busybox:1.38 nslookup api
+docker run --rm --network shop alpine:3.24 getent hosts api
 CMD
 capture p6-docker-wget <<'CMD'
 docker run --rm --network shop busybox:1.38 wget -qO- http://api
@@ -37,7 +37,7 @@ capture p6-docker-run-default <<'CMD'
 docker run -d --name api-default traefik/whoami:v1.12.0
 CMD
 capture p6-docker-default-dns <<'CMD'
-docker run --rm busybox:1.38 nslookup api-default
+docker run --rm alpine:3.24 getent hosts api-default || echo "api-default: not found"
 CMD
 capture p6-docker-run-web <<'CMD'
 docker run -d --name web -p 127.0.0.1:8080:80 traefik/whoami:v1.12.0
@@ -47,7 +47,7 @@ capture p6-docker-port <<'CMD'
 docker port web
 CMD
 capture p6-docker-curl <<'CMD'
-curl -s http://127.0.0.1:8080/ | head -n 4
+curl -s http://127.0.0.1:8080/ | grep -E '^(Hostname|IP: 172|RemoteAddr)'
 CMD
 capture p6-docker-ss <<'CMD'
 sudo ss -tlnp 'sport = :8080'
@@ -61,6 +61,9 @@ CMD
 capture p6-docker-internal <<'CMD'
 docker run --rm --network backend busybox:1.38 wget -T 3 -qO- http://example.com
 CMD
+capture p6-docker-internal-ip <<'CMD'
+docker run --rm --network backend busybox:1.38 wget -T 3 -qO- http://1.1.1.1
+CMD
 capture p6-docker-nsenter <<'CMD'
 sudo nsenter -t "$(docker inspect -f '{{.State.Pid}}' web)" -n ss -tln
 CMD
@@ -70,10 +73,10 @@ capture p6-compose-up <<'CMD'
 docker compose up -d --quiet-pull
 CMD
 capture p6-compose-front <<'CMD'
-docker run --rm --network shop_front busybox:1.38 nslookup db
+docker run --rm --network shop_front alpine:3.24 getent hosts db || echo "db: not found"
 CMD
 capture p6-compose-back <<'CMD'
-docker run --rm --network shop_back busybox:1.38 nslookup db
+docker run --rm --network shop_back alpine:3.24 getent hosts db
 CMD
 must docker compose down
 cd ..
