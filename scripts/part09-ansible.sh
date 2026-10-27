@@ -20,3 +20,4 @@ CMD
 capture p9-ansible-rules <<'CMD'
 ansible -i inventory.ini db -b -m ansible.builtin.command -a 'nft list chain inet filter input'
 CMD
+finish

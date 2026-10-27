@@ -13,8 +13,9 @@ set -euo pipefail
 HOSTS=(client remote router lb web1 web2 web3 db ns1)
 EXTRA=(ctr1 ctr2)                       # namespaces that Part 6 of the guide adds
 CONF=/etc/netlab                        # configs, app and TLS files
-LOGS=/var/log/netlab                    # one log file per lab service
-RUN=/run/netlab                         # pid files
+RUN=/run/netlab                         # pid files and the list of namespaces the lab created
+LOGS=$RUN/log                           # one log file per lab service
+REGISTRY=$RUN/namespaces
 BIND_DIR=/etc/bind/netlab               # AppArmor lets named read only /etc/bind
 BIND_WORK=/var/cache/bind/netlab        # ...and write only /var/cache/bind
 UNBOUND_CONF=/etc/unbound/netlab.conf   # AppArmor lets unbound read only /etc/unbound
@@ -68,21 +69,29 @@ plug() {
   ip -n "$host" route add default via "$gw"
 }
 
-# fresh_dir DIR: replace DIR with a new, empty, root-owned directory. Some parents are
-# group-writable (/var/cache/bind for bind, /var/log for syslog), so never trust what is there:
-# rm removes a planted symlink itself, and mkdir without -p fails if anything reappears.
+# fresh_dir DIR: replace DIR with a new, empty, root-owned directory (all parents are root-only)
 fresh_dir() {
   rm -rf -- "$1"
   mkdir -m 0755 -- "$1"
-  [ -d "$1" ] && [ ! -L "$1" ] || die "$1 is not a plain directory"
 }
+
+# register HOST: remember a namespace that this script created, so that "down" removes only those
+register() { echo "$1" >>"$REGISTRY"; }
 
 write_files() {
   local d
-  for d in "$CONF" "$LOGS" "$RUN" "$BIND_DIR" "$BIND_WORK"; do
+  for d in "$CONF" "$RUN" "$BIND_DIR"; do
     fresh_dir "$d"
   done
-  mkdir -m 0755 "$CONF/tls"   # the keys inside are chmod 600
+  mkdir -m 0755 "$LOGS" "$CONF/tls"   # the keys in tls/ are chmod 600
+  : >"$REGISTRY"
+
+  # named's working directory: AppArmor allows writes only under /var/cache/bind, which the bind
+  # group can write to. So create it in one step with its final mode (mkdir fails if anything is
+  # already there), hand it over without following links, and never write into it as root.
+  rm -rf -- "$BIND_WORK"
+  mkdir -m 0750 -- "$BIND_WORK"
+  chown -h bind:bind -- "$BIND_WORK"
 
   cat >"$CONF/app.py" <<'PY'
 #!/usr/bin/env python3
@@ -165,14 +174,14 @@ PY
 # nginx on lb: a reverse proxy in front of web1 (Part 5 turns it into a load balancer)
 worker_processes 1;
 pid /run/netlab/lb-nginx.pid;
-error_log /var/log/netlab/lb-nginx-error.log;
+error_log /run/netlab/log/lb-nginx-error.log;
 
 events {
     worker_connections 256;
 }
 
 http {
-    access_log /var/log/netlab/lb-nginx-access.log;
+    access_log /run/netlab/log/lb-nginx-access.log;
 
     server {
         listen 80;
@@ -339,8 +348,9 @@ up() {
   need_root up
   need_tools
   local h
+  [ ! -e "$REGISTRY" ] || die "the lab is already up: run 'sudo $0 down' first"
   for h in "${HOSTS[@]}" "${EXTRA[@]}"; do
-    ! ns_exists "$h" || die "namespace $h already exists: run 'sudo $0 down' first"
+    ! ns_exists "$h" || die "a namespace called $h already exists and netlab did not create it; remove it first (sudo ip netns del $h)"
   done
   trap 'rc=$?; [ "$rc" -eq 0 ] || echo "netlab: setup failed; clean up with: sudo $0 down" >&2' EXIT
 
@@ -351,6 +361,7 @@ up() {
 
   for h in "${HOSTS[@]}"; do
     ip netns add "$h"
+    register "$h"
     ip -n "$h" link set lo up
     mkdir -p "/etc/netns/$h"
   done
@@ -393,10 +404,7 @@ up() {
   printf 'nameserver 10.0.3.1\nsearch shop.internal\n' >/etc/netns/ns1/resolv.conf
 
   # services
-  # -u bind: named drops to the bind user, like the packaged service (it needs to read rndc.key);
-  # -h changes the directory itself and never follows a symlink
-  chown -h bind:bind "$BIND_WORK"
-  chmod 0750 "$BIND_WORK"
+  # -u bind: named drops to the bind user, like the packaged service (it needs to read rndc.key)
   start ns1-named ns1 named -g -u bind -c "$BIND_DIR/named.conf"
   start router-unbound router unbound -d -p -c "$UNBOUND_CONF"
   for h in web1 web2 web3; do
@@ -427,9 +435,21 @@ Run a command on a lab host:  sudo ip netns exec client curl http://www.shop.exa
 EOF
 }
 
+# lab_hosts: the registered namespaces whose names belong to the lab (HOSTS or EXTRA)
+lab_hosts() {
+  local h known
+  [ -f "$REGISTRY" ] || return 0
+  sort -u "$REGISTRY" | while read -r h; do
+    for known in "${HOSTS[@]}" "${EXTRA[@]}"; do
+      if [ "$h" = "$known" ]; then echo "$h"; fi
+    done
+  done
+}
+
 status() {
   local h
-  for h in "${HOSTS[@]}" "${EXTRA[@]}"; do
+  [ -f "$REGISTRY" ] || { echo "netlab is not up."; return 0; }
+  for h in $(lab_hosts); do
     if ns_exists "$h"; then
       echo "== $h"
       ip -n "$h" -br addr show | grep -v '^lo ' || true
@@ -440,20 +460,23 @@ status() {
 down() {
   need_root down
   local h i
-  for h in "${HOSTS[@]}" "${EXTRA[@]}"; do
-    ns_exists "$h" || continue
-    ip netns pids "$h" | xargs -r kill 2>/dev/null || true
-    for i in $(seq 1 25); do
-      [ -z "$(ip netns pids "$h")" ] && break
-      sleep 0.2
-    done
-    ip netns pids "$h" | xargs -r kill -9 2>/dev/null || true
-    ip netns del "$h"
-  done
-  for h in "${HOSTS[@]}" "${EXTRA[@]}"; do
+  if [ ! -f "$REGISTRY" ]; then
+    echo "netlab: no lab state in $RUN, nothing to remove."
+    return 0
+  fi
+  for h in $(lab_hosts); do
+    if ns_exists "$h"; then
+      ip netns pids "$h" | xargs -r kill 2>/dev/null || true
+      for i in $(seq 1 25); do
+        [ -z "$(ip netns pids "$h")" ] && break
+        sleep 0.2
+      done
+      ip netns pids "$h" | xargs -r kill -9 2>/dev/null || true
+      ip netns del "$h"
+    fi
     rm -rf "/etc/netns/$h"
   done
-  rm -rf "$CONF" "$LOGS" "$RUN" "$BIND_DIR" "$BIND_WORK" "$UNBOUND_CONF"
+  rm -rf "$CONF" "$BIND_DIR" "$BIND_WORK" "$UNBOUND_CONF" "$RUN"
   echo "netlab is down."
 }
 

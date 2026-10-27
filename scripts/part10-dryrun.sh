@@ -13,3 +13,4 @@ capture p10-dry-run <<'CMD'
 kubectl apply --dry-run=server -f mesh.yaml -f gateway.yaml -f cilium-l7.yaml
 CMD
 must kind delete cluster --name crds
+finish

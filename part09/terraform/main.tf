@@ -1,5 +1,14 @@
 terraform {
   required_version = ">= 1.10"
+
+  # shared state with a lock file in S3 (Terraform 1.10+), so every runner sees the same state
+  backend "s3" {
+    bucket       = "example-shop-terraform-state"
+    key          = "network/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
+  }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"

@@ -13,3 +13,4 @@ CMD
 capture p9-tf-plan <<'CMD'
 terraform plan -input=false -out=tfplan | grep -E '^  # |^Plan:'
 CMD
+finish

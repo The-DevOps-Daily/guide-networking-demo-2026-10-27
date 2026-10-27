@@ -58,10 +58,10 @@ CMD
 capture p6-docker-create-internal <<'CMD'
 docker network create --internal backend
 CMD
-capture p6-docker-internal <<'CMD'
+capture p6-docker-internal 1 <<'CMD'
 docker run --rm --network backend busybox:1.38 wget -T 3 -qO- http://example.com
 CMD
-capture p6-docker-internal-ip <<'CMD'
+capture p6-docker-internal-ip 1 <<'CMD'
 docker run --rm --network backend busybox:1.38 wget -T 3 -qO- http://1.1.1.1
 CMD
 capture p6-docker-nsenter <<'CMD'
@@ -84,3 +84,4 @@ cd ..
 capture p6-docker-validate <<'CMD'
 sudo dockerd --validate --config-file daemon.json
 CMD
+finish

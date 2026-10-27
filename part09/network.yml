@@ -11,14 +11,13 @@ permissions:
   contents: read
   id-token: write
 
-concurrency:
-  group: network
-  cancel-in-progress: false
-
 jobs:
   plan:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    concurrency:
+      group: network-plan-${{ github.ref }}
+      cancel-in-progress: true
     defaults:
       run:
         working-directory: network/terraform
@@ -42,6 +41,9 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     environment: network-production
+    concurrency:
+      group: network-apply
+      cancel-in-progress: false
     defaults:
       run:
         working-directory: network/terraform

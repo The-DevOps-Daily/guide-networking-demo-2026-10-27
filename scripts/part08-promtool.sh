@@ -6,3 +6,4 @@ source ../scripts/lib.sh
 capture p8-promtool <<'CMD'
 promtool check rules network-alerts.yml
 CMD
+finish

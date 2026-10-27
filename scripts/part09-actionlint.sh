@@ -6,3 +6,4 @@ source ../scripts/lib.sh
 capture p9-actionlint <<'CMD'
 actionlint network.yml && echo "network.yml: no problems found"
 CMD
+finish

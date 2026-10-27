@@ -5,7 +5,9 @@ cd "$(dirname "$0")/../part06"
 source ../scripts/lib.sh
 
 must kind create cluster --name net --config kind.yaml --wait 180s
-must kubectl wait --for=condition=Ready nodes --all --timeout=180s
+capture p6-k8s-wait-nodes <<'CMD'
+kubectl wait --for=condition=Ready nodes --all --timeout=180s
+CMD
 must kubectl -n kube-system wait --for=condition=Ready pods --all --timeout=180s
 
 capture p6-k8s-nodes <<'CMD'
@@ -17,7 +19,9 @@ CMD
 capture p6-k8s-apply <<'CMD'
 kubectl apply -f web.yaml
 CMD
-must kubectl -n shop rollout status deployment/web --timeout=180s
+capture p6-k8s-rollout <<'CMD'
+kubectl -n shop rollout status deployment/web --timeout=180s
+CMD
 capture p6-k8s-pods <<'CMD'
 kubectl -n shop get pods -o wide
 CMD
@@ -30,7 +34,9 @@ CMD
 capture p6-k8s-client <<'CMD'
 kubectl -n shop run client --image=busybox:1.38 --labels app=client -- sleep 3600
 CMD
-must kubectl -n shop wait --for=condition=Ready pod/client --timeout=120s
+capture p6-k8s-wait-client <<'CMD'
+kubectl -n shop wait --for=condition=Ready pod/client --timeout=120s
+CMD
 capture p6-k8s-resolv <<'CMD'
 kubectl -n shop exec client -- cat /etc/resolv.conf
 CMD
@@ -49,12 +55,15 @@ CMD
 capture p6-k8s-intruder <<'CMD'
 kubectl -n shop run intruder --image=busybox:1.38 --labels app=intruder -- sleep 3600
 CMD
-must kubectl -n shop wait --for=condition=Ready pod/intruder --timeout=120s
+capture p6-k8s-wait-intruder <<'CMD'
+kubectl -n shop wait --for=condition=Ready pod/intruder --timeout=120s
+CMD
 sleep 5
 capture p6-k8s-allowed <<'CMD'
 kubectl -n shop exec client -- wget -qO- -T 3 http://web | grep Hostname
 CMD
-capture p6-k8s-blocked <<'CMD'
+capture p6-k8s-blocked 1 <<'CMD'
 kubectl -n shop exec intruder -- wget -qO- -T 3 http://web
 CMD
 must kind delete cluster --name net
+finish
