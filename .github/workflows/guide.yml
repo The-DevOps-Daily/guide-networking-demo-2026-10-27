@@ -36,7 +36,7 @@ jobs:
         if: always()
         run: |
           sudo ./netlab.sh status || true
-          sudo tail -n 20 /var/log/netlab/*.log || true
+          sudo tail -n 20 /run/netlab/log/*.log || true
       - name: Lab down
         if: always()
         run: sudo ./netlab.sh down
