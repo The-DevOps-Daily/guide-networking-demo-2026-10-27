@@ -82,3 +82,23 @@ jobs:
         with:
           name: captures-06-k8s
           path: part06/captures/
+
+  cloud-cli:
+    name: Part 7, cloud CLI syntax (no credentials)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    env:
+      DOCTL_VERSION: 2.0.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install doctl (checksum verified)
+        run: |
+          base="https://github.com/digitalocean/doctl/releases/download/v${DOCTL_VERSION}"
+          curl -fsSLO "$base/doctl-${DOCTL_VERSION}-linux-amd64.tar.gz"
+          curl -fsSLO "$base/doctl-${DOCTL_VERSION}-checksums.sha256"
+          grep "linux-amd64.tar.gz" "doctl-${DOCTL_VERSION}-checksums.sha256" | sha256sum -c -
+          tar -xzf "doctl-${DOCTL_VERSION}-linux-amd64.tar.gz"
+          sudo install -m 0755 doctl /usr/local/bin/doctl
+      - run: bash scripts/part07-cli.sh
