@@ -5,7 +5,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../part07"
 export VPC=vpc-0123456789abcdef0 IGW=igw-0123456789abcdef0 NAT=nat-0123456789abcdef0 \
-  PUB_A=subnet-0123456789abcdef0 APP_A=subnet-0123456789abcdef1 PUB_B=subnet-0123456789abcdef2 APP_B=subnet-0123456789abcdef3 PUBLIC_RT=rtb-0123456789abcdef0 \
+  PUB_A=subnet-0123456789abcdef0 APP_A=subnet-0123456789abcdef1 PUB_B=subnet-0123456789abcdef2 APP_B=subnet-0123456789abcdef3 DEMO_VPC=vpc-0123456789abcdef1 PUBLIC_RT=rtb-0123456789abcdef0 \
   PRIVATE_RT=rtb-0123456789abcdef1 LB_SG=sg-0123456789abcdef0 APP_SG=sg-0123456789abcdef1 \
   DB_SG=sg-0123456789abcdef2 NACL=acl-0123456789abcdef0 AWS_REGION=us-east-1 \
   FLOW_LOGS_ROLE_ARN=arn:aws:iam::123456789012:role/flow-logs APP_INSTANCE=i-0123456789abcdef0 \

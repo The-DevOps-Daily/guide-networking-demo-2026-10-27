@@ -53,7 +53,7 @@
  "aws ec2 delete-vpc --vpc-id \"$VPC\"",
  "aws ec2 describe-addresses --query 'Addresses[].[AllocationId,PublicIp,AssociationId]' --output table",
  "aws ec2 create-vpc --cidr-block 10.20.0.0/16 --query Vpc.VpcId --output text",
- "aws ec2 create-subnet --vpc-id \"$VPC\" --cidr-block 10.20.0.0/19 --availability-zone us-east-1a",
+ "aws ec2 create-subnet --vpc-id \"$DEMO_VPC\" --cidr-block 10.20.0.0/19 --availability-zone us-east-1a",
  "gcloud compute networks create shop --subnet-mode=custom",
  "gcloud compute networks subnets create app --network=shop --region=us-central1 --range=10.20.0.0/19",
  "az network vnet create --resource-group shop --name shop --address-prefixes 10.20.0.0/16  --subnet-name app --subnet-prefixes 10.20.0.0/19",

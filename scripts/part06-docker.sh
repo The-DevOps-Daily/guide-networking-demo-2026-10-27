@@ -81,7 +81,11 @@ CMD
 must docker compose down
 cd ..
 
+# validate the guide's file at the real path, then put the runner's own config back
+must 'if [ -f /etc/docker/daemon.json ]; then sudo cp -a /etc/docker/daemon.json /tmp/daemon.json.runner; fi'
+must sudo install -m 0644 daemon.json /etc/docker/daemon.json
 capture p6-docker-validate <<'CMD'
-sudo dockerd --validate --config-file daemon.json
+sudo dockerd --validate --config-file /etc/docker/daemon.json
 CMD
+must 'if [ -f /tmp/daemon.json.runner ]; then sudo cp -a /tmp/daemon.json.runner /etc/docker/daemon.json; else sudo rm -f /etc/docker/daemon.json; fi'
 finish

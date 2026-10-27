@@ -21,5 +21,5 @@ check "tc netem" on router tc qdisc add dev p-client root netem delay 10ms
 on router tc qdisc del dev p-client root
 for h in web1 web2 web3; do check "lb reaches $h" on lb curl -sf -m 3 "http://$h:8080/health"; done
 if ./netlab.sh up >/dev/null 2>&1; then fail "a second up was not refused"; else echo "ok    a second up is refused"; fi
-[ "$(sort -u /run/netlab/namespaces | wc -l)" -eq 9 ] && echo "ok    nine namespaces registered" || fail "registry"
+[ "$(sort -u /var/lib/netlab/namespaces | wc -l)" -eq 9 ] && echo "ok    nine namespaces registered" || fail "registry"
 echo "all lab checks passed"
