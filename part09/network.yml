@@ -1,0 +1,58 @@
+name: network
+
+on:
+  pull_request:
+    paths: ['network/**']
+  push:
+    branches: [main]
+    paths: ['network/**']
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: network
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+    defaults:
+      run:
+        working-directory: network/terraform
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.NETWORK_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Check the firewall rulesets
+        run: |
+          sudo apt-get install -y -q nftables
+          for f in ../nftables/*.nft; do sudo nft -c -f "$f"; done
+      - run: terraform fmt -check
+      - run: terraform init -input=false
+      - run: terraform validate
+      - run: terraform plan -input=false -no-color
+
+  apply:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-26.04
+    environment: network-production
+    defaults:
+      run:
+        working-directory: network/terraform
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.NETWORK_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+      - run: terraform init -input=false
+      - run: terraform apply -input=false -auto-approve
+      - name: Smoke test
+        run: ../scripts/netcheck.sh shop.example:443

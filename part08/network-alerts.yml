@@ -1,0 +1,31 @@
+groups:
+  - name: network
+    rules:
+      - alert: EndpointDown
+        expr: probe_success == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: '{{ $labels.instance }} has failed its probe for 2 minutes'
+      - alert: EndpointSlow
+        expr: probe_duration_seconds > 1
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: '{{ $labels.instance }} takes {{ $value | humanizeDuration }} to answer'
+      - alert: CertificateExpiresSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 14 * 86400
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'The certificate of {{ $labels.instance }} expires in less than 14 days'
+      - alert: TcpRetransmitsHigh
+        expr: rate(node_netstat_Tcp_RetransSegs[5m]) / rate(node_netstat_Tcp_OutSegs[5m]) > 0.02
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: 'More than 2% of TCP segments from {{ $labels.instance }} are retransmissions'

@@ -1,0 +1,21 @@
+#!/usr/sbin/nft -f
+# Managed by Ansible: local changes are overwritten
+flush ruleset
+
+table inet filter {
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        iif "lo" accept
+        ct state established,related accept
+        ct state invalid drop
+        meta l4proto { icmp, ipv6-icmp } accept
+
+        tcp dport 22 ip saddr {{ admin_cidr }} accept
+{% for cidr in db_clients %}
+        ip saddr {{ cidr }} tcp dport 5432 accept
+{% endfor %}
+
+        counter comment "everything else"
+    }
+}
