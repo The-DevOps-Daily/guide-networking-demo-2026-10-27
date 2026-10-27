@@ -4,7 +4,7 @@ set -uo pipefail
 cd "$(dirname "$0")/../part09/ansible"
 source ../../scripts/lib.sh
 must docker run -d --name db1 --cap-add NET_ADMIN ubuntu:26.04 sleep infinity
-must docker exec db1 bash -c "'apt-get update -q && apt-get install -y -q python3 >/dev/null'"
+must docker exec db1 bash -c "'apt-get update -q && apt-get install -y -q python3 python3-apt >/dev/null'"
 capture p9-ansible-lint <<'CMD'
 ansible-lint firewall.yml
 CMD
