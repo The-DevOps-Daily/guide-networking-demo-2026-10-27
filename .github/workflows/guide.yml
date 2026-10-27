@@ -1,0 +1,84 @@
+name: guide
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lab:
+    name: netlab.sh on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the packages from Part 1
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q iproute2 iputils-ping iputils-tracepath iputils-arping traceroute mtr-tiny \
+            tcpdump nftables conntrack curl netcat-openbsd openssl python3 ipcalc iperf3 wireguard-tools \
+            bind9 bind9-dnsutils unbound nginx haproxy
+          sudo systemctl disable --now named unbound nginx haproxy
+      - name: Lab up
+        run: sudo ./netlab.sh up
+      - name: Smoke test
+        run: sudo bash scripts/lab-smoke.sh
+      - name: Status and logs
+        if: always()
+        run: |
+          sudo ./netlab.sh status || true
+          sudo tail -n 20 /var/log/netlab/*.log || true
+      - name: Lab down
+        if: always()
+        run: sudo ./netlab.sh down
+
+  docker:
+    name: Part 6, Docker
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: bash scripts/part06-docker.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: captures-06-docker
+          path: part06/captures/
+
+  kubernetes:
+    name: Part 6, Kubernetes (kind)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    env:
+      KIND_VERSION: v0.33.0
+      KUBECTL_VERSION: v1.37.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install kind and kubectl (checksums verified)
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -fsSLo kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          curl -fsSLo kind.sha256 "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64.sha256sum"
+          echo "$(cut -d' ' -f1 kind.sha256)  kind" | sha256sum -c -
+          curl -fsSLo kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+          curl -fsSLo kubectl.sha256 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl.sha256"
+          echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c -
+          install -m 0755 kind kubectl "$HOME/bin/"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: bash scripts/part06-k8s.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: captures-06-k8s
+          path: part06/captures/

@@ -1,0 +1,19 @@
+services:
+  proxy:
+    image: nginx:1.30-alpine
+    ports:
+      - '127.0.0.1:8080:80'
+    networks: [front]
+  api:
+    image: traefik/whoami:v1.12.0
+    networks: [front, back]
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: example
+    networks: [back]
+
+networks:
+  front: {}
+  back:
+    internal: true
