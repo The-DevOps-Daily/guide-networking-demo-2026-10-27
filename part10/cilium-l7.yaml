@@ -1,0 +1,21 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: api-l7
+  namespace: shop
+spec:
+  endpointSelector:
+    matchLabels:
+      app: api
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: web
+      toPorts:
+        - ports:
+            - port: '8080'
+              protocol: TCP
+          rules:
+            http:
+              - method: GET
+                path: '/api/.*'

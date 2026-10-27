@@ -1,0 +1,49 @@
+# every workload in the namespace accepts mTLS only
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: shop
+spec:
+  mtls:
+    mode: STRICT
+---
+# only the web service account may call the api, and only with GET and POST under /api/
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: api-from-web
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ['cluster.local/ns/shop/sa/web']
+      to:
+        - operation:
+            methods: ['GET', 'POST']
+            paths: ['/api/*']
+---
+# connection limits and outlier detection: a server with 5 errors in a row is ejected for 30 s
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: api
+  namespace: shop
+spec:
+  host: api.shop.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
